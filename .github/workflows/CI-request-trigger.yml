@@ -34,6 +34,7 @@ jobs:
         run: chmod +x trigger-CI.sh get-CI-result.sh
       - name: trigger a CI
         run: |
+          echo "=== Task started at: $(date '+%Y-%m-%d %H:%M:%S') ==="
           COMMIT_ID=$([ "${{ github.event_name }}" == "pull_request" ] && echo "${{ github.event.pull_request.head.sha }}" || echo "${{ github.sha }}")
           echo "Using Commit ID: $COMMIT_ID"
           echo "$GITHUB_REF"
