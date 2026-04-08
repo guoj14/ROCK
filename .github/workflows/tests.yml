@@ -41,8 +41,8 @@ jobs:
         run: |
           mkdir -p .tmp/test_data/logs
           uv run pytest tests/unit \
+            -n auto \
             --timeout=60 \
-            --reruns 1 \
             --log-cli-level=WARNING \
             --tb=short \
             -v
@@ -75,7 +75,7 @@ jobs:
 
       - name: Start Ray cluster
         run: |
-          uv run ray start --head --disable-usage-stats --num-cpus=4 --memory=8589934592
+          uv run ray start --head --disable-usage-stats --num-cpus=2 --memory=6442450944
           sleep 3
           uv run ray status
 
@@ -83,8 +83,7 @@ jobs:
         run: |
           mkdir -p .tmp/test_data/logs
           uv run pytest tests/integration \
-            --timeout=300 \
-            --reruns 1 \
+            --timeout=600 \
             --log-cli-level=WARNING \
             --tb=short \
             -v
