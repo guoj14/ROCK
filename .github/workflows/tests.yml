@@ -37,11 +37,13 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-extras --group test
 
-      - name: Run all unit tests
+      - name: Run unit tests
+        env:
+          ROCK_LOGGING_LEVEL: WARNING
         run: |
           mkdir -p .tmp/test_data/logs
           uv run pytest tests/unit \
-            -n auto \
+            -m "not need_ray and not need_docker and not need_admin and not need_admin_and_network" \
             --timeout=60 \
             --log-cli-level=WARNING \
             --tb=short \
@@ -79,10 +81,66 @@ jobs:
           sleep 3
           uv run ray status
 
-      - name: Run all integration tests
+      - name: Run fast tests (no Ray/Docker/Admin)
+        env:
+          ROCK_WORKER_ENV_TYPE: uv
+          ROCK_LOGGING_LEVEL: WARNING
         run: |
           mkdir -p .tmp/test_data/logs
           uv run pytest tests/integration \
+            -m "not need_ray and not need_docker and not need_admin and not need_admin_and_network" \
+            --timeout=300 \
+            --log-cli-level=WARNING \
+            --tb=short \
+            -v
+
+      - name: Run Docker-dependent tests
+        if: success() || failure()
+        env:
+          ROCK_WORKER_ENV_TYPE: uv
+          ROCK_LOGGING_LEVEL: WARNING
+        run: |
+          uv run pytest tests/ \
+            -m "need_docker" \
+            --timeout=600 \
+            --log-cli-level=WARNING \
+            --tb=short \
+            -v
+
+      - name: Run Ray-dependent tests
+        if: success() || failure()
+        env:
+          ROCK_WORKER_ENV_TYPE: uv
+          ROCK_LOGGING_LEVEL: WARNING
+        run: |
+          uv run pytest tests/ \
+            -m "need_ray" \
+            --timeout=600 \
+            --log-cli-level=WARNING \
+            --tb=short \
+            -v
+
+      - name: Run Admin-dependent tests
+        if: success() || failure()
+        env:
+          ROCK_WORKER_ENV_TYPE: uv
+          ROCK_LOGGING_LEVEL: WARNING
+        run: |
+          uv run pytest tests/ \
+            -m "need_admin" \
+            --timeout=600 \
+            --log-cli-level=WARNING \
+            --tb=short \
+            -v
+
+      - name: Run Admin + Network tests
+        if: success() || failure()
+        env:
+          ROCK_WORKER_ENV_TYPE: uv
+          ROCK_LOGGING_LEVEL: WARNING
+        run: |
+          uv run pytest tests/ \
+            -m "need_admin_and_network" \
             --timeout=600 \
             --log-cli-level=WARNING \
             --tb=short \
