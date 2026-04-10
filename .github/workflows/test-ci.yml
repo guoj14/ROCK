@@ -1,0 +1,250 @@
+name: Test CI (Unit + Integration)
+
+on:
+  push:
+    branches:
+      - master
+      - release/**
+  pull_request:
+    branches:
+      - master
+      - release/**
+  workflow_dispatch:
+    inputs:
+      skip_integration:
+        description: "Skip integration tests"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+env:
+  PYTHON_VERSION: "3.11"
+  ROCK_LOGGING_LEVEL: "INFO"
+  ROCK_ADMIN_ENV: "dev"
+
+# Cancel in-progress runs for the same branch/PR
+concurrency:
+  group: test-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ============================================================
+  # Phase 1: Unit Tests
+  # ============================================================
+
+  setup:
+    name: "🔧 Setup & Lint"
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cleanup old Ray sessions
+        run: |
+          target="$(readlink -f /tmp/ray 2>/dev/null || echo /tmp/ray)"
+          [ -d "$target" ] || exit 0
+          echo "Cleaning Ray sessions older than 60min..."
+          find "$target" -mindepth 1 -maxdepth 1 -type d -name 'session_*' -mmin +60 -exec rm -rf -- {} + || true
+
+      - name: Install dependencies
+        run: uv sync --all-extras --group test --python ${{ env.PYTHON_VERSION }}
+
+      - name: Lint check
+        run: uv run ruff check .
+
+      - name: Format check
+        run: uv run ruff format --check .
+
+  unit-fast:
+    name: "🧪 Unit / Fast Tests"
+    needs: setup
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: uv sync --all-extras --group test --python ${{ env.PYTHON_VERSION }}
+
+      - name: Run fast unit tests
+        run: |
+          mkdir -p data/logs
+          echo "🚀 Running fast tests (no external deps)..."
+          uv run pytest tests/unit \
+            -n auto \
+            -m "not need_ray and not need_admin and not need_admin_and_network and not need_docker and not need_database" \
+            --reruns 1 \
+            --junitxml=reports/unit-fast.xml
+        env:
+          ROCK_WORKER_ENV_TYPE: local
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-fast-report
+          path: reports/unit-fast.xml
+          retention-days: 7
+
+  unit-ray:
+    name: "⚡ Unit / Ray Tests"
+    needs: unit-fast
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: uv sync --all-extras --group test --python ${{ env.PYTHON_VERSION }}
+
+      - name: Run Ray-dependent tests
+        run: |
+          mkdir -p data/logs
+          echo "⚡ Running Ray tests..."
+          uv run pytest tests/unit \
+            -n auto \
+            -m "need_ray" \
+            --reruns 1 \
+            --junitxml=reports/unit-ray.xml
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-ray-report
+          path: reports/unit-ray.xml
+          retention-days: 7
+
+  unit-admin:
+    name: "🔐 Unit / Admin Tests"
+    needs: unit-ray
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: uv sync --all-extras --group test --python ${{ env.PYTHON_VERSION }}
+
+      - name: Run Admin-dependent tests
+        run: |
+          mkdir -p data/logs
+          echo "🔐 Running Admin tests..."
+          uv run pytest tests/unit \
+            -n auto \
+            -m "need_admin" \
+            --reruns 1 \
+            --junitxml=reports/unit-admin.xml
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-admin-report
+          path: reports/unit-admin.xml
+          retention-days: 7
+
+  unit-admin-network:
+    name: "🌐 Unit / Admin + Network Tests"
+    needs: unit-admin
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: uv sync --all-extras --group test --python ${{ env.PYTHON_VERSION }}
+
+      - name: Run Admin + Network tests
+        run: |
+          mkdir -p data/logs
+          echo "🌐 Running Admin + Network tests..."
+          uv run pytest tests/unit \
+            -n auto \
+            -m "need_admin_and_network" \
+            --reruns 1 \
+            --junitxml=reports/unit-admin-network.xml
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-admin-network-report
+          path: reports/unit-admin-network.xml
+          retention-days: 7
+
+  # ============================================================
+  # Phase 2: Integration Tests
+  # Runs only after ALL unit tests pass
+  # ============================================================
+
+  integration:
+    name: "🔗 Integration Tests"
+    needs: [unit-fast, unit-ray, unit-admin, unit-admin-network]
+    if: ${{ github.event.inputs.skip_integration != 'true' }}
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: uv sync --all-extras --group test --python ${{ env.PYTHON_VERSION }}
+
+      - name: Verify Docker availability
+        run: |
+          echo "🐳 Checking Docker..."
+          docker info > /dev/null 2>&1 || { echo "❌ Docker is not available, skipping integration tests"; exit 1; }
+          echo "✅ Docker is available"
+
+      - name: Run integration tests
+        run: |
+          mkdir -p data/logs
+          echo "🔗 Running integration tests..."
+          uv run pytest tests/integration \
+            -n auto \
+            -m "integration or not integration" \
+            --reruns 1 \
+            --junitxml=reports/integration.xml
+        env:
+          ROCK_WORKER_ENV_TYPE: local
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-report
+          path: reports/integration.xml
+          retention-days: 7
+
+  # ============================================================
+  # Summary Gate
+  # ============================================================
+
+  test-summary:
+    name: "📊 Test Summary"
+    needs: [unit-fast, unit-ray, unit-admin, unit-admin-network, integration]
+    if: always()
+    runs-on: self-hosted
+    steps:
+      - name: Check results
+        run: |
+          echo "=============================="
+          echo "       Test Results Summary"
+          echo "=============================="
+          echo ""
+          echo "Unit / Fast:            ${{ needs.unit-fast.result }}"
+          echo "Unit / Ray:             ${{ needs.unit-ray.result }}"
+          echo "Unit / Admin:           ${{ needs.unit-admin.result }}"
+          echo "Unit / Admin + Network: ${{ needs.unit-admin-network.result }}"
+          echo "Integration:            ${{ needs.integration.result }}"
+          echo ""
+          echo "=============================="
+
+          # Fail if any required job failed
+          if [[ "${{ needs.unit-fast.result }}" == "failure" ]] || \
+             [[ "${{ needs.unit-ray.result }}" == "failure" ]] || \
+             [[ "${{ needs.unit-admin.result }}" == "failure" ]] || \
+             [[ "${{ needs.unit-admin-network.result }}" == "failure" ]] || \
+             [[ "${{ needs.integration.result }}" == "failure" ]]; then
+            echo "❌ Some tests failed!"
+            exit 1
+          fi
+
+          echo "✅ All tests passed!"
