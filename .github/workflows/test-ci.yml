@@ -140,20 +140,22 @@ jobs:
           echo "  Unit / Admin Tests"
           echo "  Started at: $(date '+%Y-%m-%d %H:%M:%S')"
           echo "========================================"
-          count=$(uv run pytest tests/unit --collect-only -q -m "need_admin" 2>/dev/null | grep -c "test" || true)
-          if [ "$count" -eq 0 ]; then
+          set +e
+          uv run pytest tests/unit \
+            -n auto \
+            -m "need_admin" \
+            --reruns 1 \
+            --junitxml=reports/unit-admin.xml
+          exit_code=$?
+          set -e
+          if [ $exit_code -eq 5 ]; then
             echo ""
             echo "[SKIP] No tests with marker 'need_admin' found in tests/unit/."
             echo "       These tests may exist in tests/integration/ and will run in the Integration phase."
             echo ""
             exit 0
           fi
-          echo "Found $count admin test(s), running..."
-          uv run pytest tests/unit \
-            -n auto \
-            -m "need_admin" \
-            --reruns 1 \
-            --junitxml=reports/unit-admin.xml
+          exit $exit_code
 
       - name: Upload test report
         if: always()
@@ -181,20 +183,22 @@ jobs:
           echo "  Unit / Admin + Network Tests"
           echo "  Started at: $(date '+%Y-%m-%d %H:%M:%S')"
           echo "========================================"
-          count=$(uv run pytest tests/unit --collect-only -q -m "need_admin_and_network" 2>/dev/null | grep -c "test" || true)
-          if [ "$count" -eq 0 ]; then
+          set +e
+          uv run pytest tests/unit \
+            -n auto \
+            -m "need_admin_and_network" \
+            --reruns 1 \
+            --junitxml=reports/unit-admin-network.xml
+          exit_code=$?
+          set -e
+          if [ $exit_code -eq 5 ]; then
             echo ""
             echo "[SKIP] No tests with marker 'need_admin_and_network' found in tests/unit/."
             echo "       These tests may exist in tests/integration/ and will run in the Integration phase."
             echo ""
             exit 0
           fi
-          echo "Found $count admin+network test(s), running..."
-          uv run pytest tests/unit \
-            -n auto \
-            -m "need_admin_and_network" \
-            --reruns 1 \
-            --junitxml=reports/unit-admin-network.xml
+          exit $exit_code
 
       - name: Upload test report
         if: always()
