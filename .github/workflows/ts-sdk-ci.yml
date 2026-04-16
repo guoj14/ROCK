@@ -56,7 +56,8 @@ jobs:
         run: |
           echo "=== Task started at: $(date '+%Y-%m-%d %H:%M:%S') ==="
           python -m pip install --upgrade pip
-          pip install -e ".[admin]"
+          pip install uv
+          uv pip install --system -e ".[admin]"
 
       - name: Pull Docker image
         run: |
