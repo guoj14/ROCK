@@ -76,10 +76,7 @@ class BashTrial(AbstractTrial):
         return f"artifacts/{self._config.namespace}/{self._config.experiment_id}/{self._config.job_name}"
 
     def build(self) -> str:
-        lines = ["#!/bin/bash", "set -e", ""]
-        if self._config.script:
-            lines.append(self._config.script)
-        return "\n".join(lines)
+        return self._config.script or ""
 
     async def collect(self, sandbox: Sandbox, output: str, exit_code: int) -> TrialResult:
         exception_info = None
